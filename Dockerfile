@@ -23,7 +23,8 @@ RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu
 RUN apt update -y && \
     apt dist-upgrade -y && \
     apt install -y vim screen htop iotop iftop curl ca-certificates lsof npm \
-    git ripgrep ffmpeg build-essential python3-dev libffi-dev sudo && \
+    git ripgrep ffmpeg build-essential python3-dev libffi-dev sudo \
+    libgtk-3-0 libglib2.0-0 libx11-6 libxrender1 libxext6 libdbus-1-3 && \
     apt clean && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
