@@ -44,33 +44,34 @@ RUN cd /usr/local/lib && \
 
 RUN git config --global url."https://ghfast.top/https://github.com".insteadOf "https://github.com"
 
-# 修复点 3: 避免直接删除 /root，改为清理具体的缓存目录
+# 核心修改点：执行完整的官方 install.sh（移除sed删减操作），并补充 Playwright 的 Chromium 浏览器内核
 RUN curl -fsSL https://ghproxy.net/https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh -o install.sh && \
-    sed -i 's/\$UV_CMD pip install -e ".\\[all\\]"/\$UV_CMD pip install -e "."/' install.sh && \
-    sed -i '/^main() {/,/^}/ s/install_node_deps/#install_node_deps/' install.sh && \
     bash install.sh && \
+    cd /usr/local/lib/hermes-agent && \
+    /tools/bin/uv run playwright install chromium && \
     rm -rf /root/.cache /root/.npm
 
-# 修复点 1: 先创建 hermes 用户，然后再执行 chown
+# 创建 hermes 用户并配置免密 sudo
 RUN useradd -m -s /bin/bash hermes && chown -R hermes:hermes /home/hermes && chmod 700 /home/hermes && \
     echo "hermes ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/hermes && \
     chmod 0440 /etc/sudoers.d/hermes && \
     usermod -aG systemd-timesync hermes
 
-# 创建完用户后，现在可以安全地对 /tools 进行赋权了
+# 对 tools 赋权给 hermes 用户
 RUN chown -R hermes:hermes /tools && \
     chmod 755 /tools/bin -R
 
+# 启动脚本：增加 sudo chown 自动修复宿主机挂载目录的权限问题
 RUN echo '#!/bin/bash' > /entrypoint.sh && \
     echo 'sudo chown -R hermes:hermes /home/hermes' >> /entrypoint.sh && \
     echo 'hermes-web-ui start $UI_PORT && sleep infinity' >> /entrypoint.sh && \
     chmod +x /entrypoint.sh
 
-# 修复点 4: 在切换为非 root 用户前，直接用 root 身份安装全局 npm 包，避免 PATH 丢失问题
+# 在 root 环境下全局安装 hermes-web-ui 避免权限和依赖丢失
 RUN npm root -g && npm install -g hermes-web-ui && \
     chmod 777 /usr/local/lib/node_modules/hermes-web-ui/dist
 
-# 切换为普通用户身份并暴露端口
+# 切换为 hermes 身份运行容器
 WORKDIR /home/hermes
 VOLUME /home/hermes
 USER hermes
