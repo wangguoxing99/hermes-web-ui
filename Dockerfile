@@ -62,26 +62,25 @@ RUN cd /usr/local/lib/hermes-agent && \
     numpy pandas pillow opencv-python-headless \
     pyyaml python-dotenv pydantic pdfplumber PyMuPDF
 
+# 预装全局 Node.js 常用依赖，并安装 hermes-web-ui
+RUN npm root -g && npm install -g hermes-web-ui axios cheerio dotenv
+
 # 创建 hermes 用户并配置免密 sudo
 RUN useradd -m -s /bin/bash hermes && chown -R hermes:hermes /home/hermes && chmod 700 /home/hermes && \
     echo "hermes ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/hermes && \
     chmod 0440 /etc/sudoers.d/hermes && \
     usermod -aG systemd-timesync hermes
 
-# 对 tools 赋权给 hermes 用户
+# 【关键修复点】：将所有需要 hermes 用户读写执行的核心目录，直接把所有权移交给 hermes
 RUN chown -R hermes:hermes /tools && \
-    chmod 755 /tools/bin -R
+    chown -R hermes:hermes /usr/local/lib/hermes-agent && \
+    chown -R hermes:hermes /usr/local/lib/node_modules/hermes-web-ui
 
 # 启动脚本：增加 sudo chown 自动修复宿主机挂载目录的权限问题
 RUN echo '#!/bin/bash' > /entrypoint.sh && \
     echo 'sudo chown -R hermes:hermes /home/hermes' >> /entrypoint.sh && \
     echo 'hermes-web-ui start $UI_PORT && sleep infinity' >> /entrypoint.sh && \
     chmod +x /entrypoint.sh
-
-# 预装全局 Node.js 常用依赖，并安装 hermes-web-ui
-RUN npm root -g && npm install -g hermes-web-ui axios cheerio dotenv && \
-    chmod 777 /usr/local/lib/node_modules/hermes-web-ui/dist && \
-    chmod -R 755 /usr/local/lib/node_modules
 
 # 切换为 hermes 身份运行容器
 WORKDIR /home/hermes
