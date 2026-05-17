@@ -62,6 +62,7 @@ RUN chown -R hermes:hermes /tools && \
     chmod 755 /tools/bin -R
 
 RUN echo '#!/bin/bash' > /entrypoint.sh && \
+    echo 'sudo chown -R hermes:hermes /home/hermes' >> /entrypoint.sh && \
     echo 'hermes-web-ui start $UI_PORT && sleep infinity' >> /entrypoint.sh && \
     chmod +x /entrypoint.sh
 
