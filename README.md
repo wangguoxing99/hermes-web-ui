@@ -18,9 +18,11 @@
 docker run -d \
   --name hermes \
   -p 8648:8648 \
-  -v $PWD/hermes-data:/home/hermes \
   -e UI_PORT=8648 \
-  ghcr.io/wangguoxing99/hermes-web-ui:latest
+  -e HF_DATASET_ID="你的/dataset-repo" \
+  -e HF_TOKEN="你的hf_token" \
+  -e BACKUP_INTERVAL=30 \
+  ghcr.io/wangguoxing99/hermes-docker:latest
 ```
 查看token
 ```
