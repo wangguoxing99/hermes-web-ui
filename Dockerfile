@@ -23,7 +23,7 @@ ENV PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
 RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources && \
     sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
 
-# [新增] 补充了 OCR、PDF解析、解压工具及图像处理底层依赖 libgl1
+# 补充了 OCR、PDF解析、解压工具及图像处理底层依赖 libgl1
 RUN apt update -y && \
     apt dist-upgrade -y && \
     apt install -y vim screen htop iotop iftop curl ca-certificates lsof npm \
@@ -33,7 +33,9 @@ RUN apt update -y && \
     apt clean && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# 设置 unsafe-perm 允许 root 身份执行 npm lifecycle scripts (防止 playwright 等包报错)
 RUN npm config set registry https://registry.npmmirror.com && \
+    npm config set unsafe-perm true && \
     npm install -g n && \
     n 24
 
@@ -46,16 +48,16 @@ RUN cd /usr/local/lib && \
 
 RUN git config --global url."https://ghfast.top/https://github.com".insteadOf "https://github.com"
 
-# 执行完整的官方 install.sh，并补充 Playwright 的 Chromium 浏览器内核
-RUN curl -fsSL https://ghproxy.net/https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh -o install.sh && \
-    bash install.sh && \
-    cd /usr/local/lib/hermes-agent && \
-    /tools/bin/uv run playwright install chromium && \
+# 【核心修复点】直接进入仓库目录，运行自带的 scripts/install.sh，完全避开 proxy 下载导致的 HTML 语法报错
+RUN cd /usr/local/lib/hermes-agent && \
+    bash scripts/install.sh && \
+    /tools/bin/uv run python -m playwright install chromium || true && \
     rm -rf /root/.cache /root/.npm
 
-# [新增] 预装常用的 Python 扩展库（爬虫、数据、图像、PDF解析等），供插件和 Skill 调用
+# 预装常用的 Python 扩展库（爬虫、数据、图像、PDF解析等），供插件和 Skill 调用
+# 去除 --system 让它正确安装到 hermes 的虚拟环境中
 RUN cd /usr/local/lib/hermes-agent && \
-    /tools/bin/uv pip install --system \
+    /tools/bin/uv pip install \
     requests httpx aiohttp beautifulsoup4 lxml \
     numpy pandas pillow opencv-python-headless \
     pyyaml python-dotenv pydantic pdfplumber PyMuPDF
@@ -76,7 +78,7 @@ RUN echo '#!/bin/bash' > /entrypoint.sh && \
     echo 'hermes-web-ui start $UI_PORT && sleep infinity' >> /entrypoint.sh && \
     chmod +x /entrypoint.sh
 
-# [新增] 预装全局 Node.js 常用依赖，并安装 hermes-web-ui
+# 预装全局 Node.js 常用依赖，并安装 hermes-web-ui
 RUN npm root -g && npm install -g hermes-web-ui axios cheerio dotenv && \
     chmod 777 /usr/local/lib/node_modules/hermes-web-ui/dist && \
     chmod -R 755 /usr/local/lib/node_modules
