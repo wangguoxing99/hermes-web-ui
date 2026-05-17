@@ -39,6 +39,9 @@ docker logs hermes
 | 变量名 | 默认值 | 说明 |
 |------|------|------|
 | `UI_PORT` | `8648` | Web UI 监听端口 |
+| `HF_DATASET_ID` | `huggingface部署时填` | huggingface的datasets名称 |
+| `HF_TOKEN` | `huggingface部署时填` | huggingface令牌 |
+| `WEBUI_TOKEN` | `自定义` | Web UI 访问密码（非必须） |
 
 ---
 
