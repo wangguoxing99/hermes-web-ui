@@ -1,0 +1,15 @@
+name: Keep HF Space Alive
+
+on:
+  schedule:
+    # 每 3 小时运行一次 (Cron 表达式)
+    - cron: '0 */3 * * *'
+  workflow_dispatch: # 允许手动触发
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Curl HF Space
+        run: |
+          curl -I -H "Authorization: Bearer ${{ secrets.HF_TOKEN }}" https://wangguoxing99-hms.hf.space
