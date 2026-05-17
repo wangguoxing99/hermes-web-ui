@@ -10,13 +10,16 @@ ENV PATH="$UV_INSTALL_DIR:$PATH"
 ENV GATEWAY_ALLOW_ALL_USERS=true
 ENV WEIXIN_GROUP_POLICY=open
 ENV HERMES_YOLO_MODE=1
+
 RUN mkdir -p /tools/bin && \
     mkdir -p /tools/uv/{python,tools,cache} && \
     chmod -R 777 /tools
+
 # cn only
 ENV UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
 ENV NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
 ENV PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
+
 RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources && \
     sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
 
@@ -41,13 +44,20 @@ RUN cd /usr/local/lib && \
 
 RUN git config --global url."https://ghfast.top/https://github.com".insteadOf "https://github.com"
 
+# 修复点 3: 避免直接删除 /root，改为清理具体的缓存目录
 RUN curl -fsSL https://ghproxy.net/https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh -o install.sh && \
     sed -i 's/\$UV_CMD pip install -e ".\\[all\\]"/\$UV_CMD pip install -e "."/' install.sh && \
     sed -i '/^main() {/,/^}/ s/install_node_deps/#install_node_deps/' install.sh && \
     bash install.sh && \
-    rm -rf /root && \
-    mkdir /root
+    rm -rf /root/.cache /root/.npm
 
+# 修复点 1: 先创建 hermes 用户，然后再执行 chown
+RUN useradd -m -s /bin/bash hermes && chown -R hermes:hermes /home/hermes && chmod 700 /home/hermes && \
+    echo "hermes ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/hermes && \
+    chmod 0440 /etc/sudoers.d/hermes && \
+    usermod -aG systemd-timesync hermes
+
+# 创建完用户后，现在可以安全地对 /tools 进行赋权了
 RUN chown -R hermes:hermes /tools && \
     chmod 755 /tools/bin -R
 
@@ -55,17 +65,14 @@ RUN echo '#!/bin/bash' > /entrypoint.sh && \
     echo 'hermes-web-ui start $UI_PORT && sleep infinity' >> /entrypoint.sh && \
     chmod +x /entrypoint.sh
 
-RUN useradd -m -s /bin/bash hermes && chown -R hermes:hermes /home/hermes && chmod 700 /home/hermes && \
-    echo "hermes ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/hermes && \
-    chmod 0440 /etc/sudoers.d/hermes && \
-    usermod -aG systemd-timesync hermes
+# 修复点 4: 在切换为非 root 用户前，直接用 root 身份安装全局 npm 包，避免 PATH 丢失问题
+RUN npm root -g && npm install -g hermes-web-ui && \
+    chmod 777 /usr/local/lib/node_modules/hermes-web-ui/dist
 
+# 切换为普通用户身份并暴露端口
 WORKDIR /home/hermes
 VOLUME /home/hermes
 USER hermes
 EXPOSE 8648
-
-RUN npm root -g && sudo npm install -g hermes-web-ui && \
-    sudo chmod 777 /usr/local/lib/node_modules/hermes-web-ui/dist
 
 CMD ["/entrypoint.sh"]
