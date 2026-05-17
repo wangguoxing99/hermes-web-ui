@@ -24,7 +24,8 @@ RUN apt update -y && \
     apt dist-upgrade -y && \
     apt install -y vim screen htop iotop iftop curl ca-certificates lsof npm \
     git ripgrep ffmpeg build-essential python3-dev libffi-dev sudo && \
-    apt clean
+    apt clean && \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN npm config set registry https://registry.npmmirror.com && \
     npm install -g n && \
