@@ -2,7 +2,7 @@
 
 > **一站式 Hermes 可视化控制台 · 内置 Agent · 国内镜像加速 · Ubuntu 24.04**
 
-一个基于 **Ubuntu 24.04 + Node 24 + Python (uv)** 的 **Hermes Web UI** 生产级 Docker 镜像，修改自ghostry/hermes-web-ui集成：
+一个基于 **Ubuntu 24.04 + Node 24 + Python (uv)** 的 **Hermes Web UI** 生产级 Docker 镜像，修改自ghostry/hermes-web-ui，添加常用依赖集成：
 
 - ✅ Hermes Web UI
 - ✅ Hermes Agent（NousResearch）
