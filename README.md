@@ -2,13 +2,14 @@
 
 > **一站式 Hermes 可视化控制台 · 内置 Agent · 国内镜像加速 · Ubuntu 24.04**
 
-一个基于 **Ubuntu 24.04 + Node 24 + Python (uv)** 的 **Hermes Web UI** 生产级 Docker 镜像，集成：
+一个基于 **Ubuntu 24.04 + Node 24 + Python (uv)** 的 **Hermes Web UI** 生产级 Docker 镜像，修改自ghostry/hermes-web-ui集成：
 
 - ✅ Hermes Web UI
 - ✅ Hermes Agent（NousResearch）
 - ✅ FFmpeg / Git / Vim
 - ✅ 国内 APT / PyPI / NPM 镜像
 - ✅ 非 root 用户运行（hermes）
+- ✅ 新增Huggingface部署支持
 
 ---
 
@@ -18,10 +19,8 @@
 docker run -d \
   --name hermes \
   -p 8648:8648 \
+  -v $PWD/hermes-data:/home/hermes \
   -e UI_PORT=8648 \
-  -e HF_DATASET_ID="你的/dataset-repo" \
-  -e HF_TOKEN="你的hf_token" \
-  -e BACKUP_INTERVAL=30 \
   ghcr.io/wangguoxing99/hermes-docker:latest
 ```
 查看token
