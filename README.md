@@ -42,6 +42,7 @@ docker logs hermes
 | `HF_DATASET_ID` | `huggingface部署时填` | huggingface的datasets名称 |
 | `HF_TOKEN` | `huggingface部署时填` | huggingface令牌 |
 | `WEBUI_TOKEN` | `自定义` | Web UI 访问密码（非必须） |
+| `BACKUP_INTERVAL` | `10` | huggingface自动备份时间分钟数设置，默认10分钟 |
 
 ---
 
@@ -66,6 +67,7 @@ docker logs hermes
 ```bash
 -v /opt/hermes:/home/hermes
 ```
+或huggingface自动备份恢复
 
 挂载后：
 - Hermes 配置
