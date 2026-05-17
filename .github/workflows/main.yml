@@ -38,4 +38,4 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ghcr.io/wangguoxing99/hermes-docker:latest
+          tags: ghcr.io/wangguoxing99/hermes-web-ui:latest
