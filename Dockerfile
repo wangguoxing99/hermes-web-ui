@@ -15,10 +15,11 @@ RUN mkdir -p /tools/bin && \
     mkdir -p /tools/uv/{python,tools,cache} && \
     chmod -R 777 /tools
 
-# cn only
+# cn only (新增了 N_NODE_MIRROR 解决 n 24 下载超时问题)
 ENV UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
 ENV NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
-ENV PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
+ENV PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"
+ENV N_NODE_MIRROR="https://npmmirror.com/mirrors/node"
 
 RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources && \
     sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
@@ -48,14 +49,13 @@ RUN cd /usr/local/lib && \
 
 RUN git config --global url."https://ghfast.top/https://github.com".insteadOf "https://github.com"
 
-# 【核心修复点】直接进入仓库目录，运行自带的 scripts/install.sh，完全避开 proxy 下载导致的 HTML 语法报错
+# 直接进入仓库目录，运行自带的 scripts/install.sh，完全避开 proxy 下载导致的 HTML 语法报错
 RUN cd /usr/local/lib/hermes-agent && \
     bash scripts/install.sh && \
     /tools/bin/uv run python -m playwright install chromium || true && \
     rm -rf /root/.cache /root/.npm
 
 # 预装常用的 Python 扩展库（爬虫、数据、图像、PDF解析等），供插件和 Skill 调用
-# 去除 --system 让它正确安装到 hermes 的虚拟环境中
 RUN cd /usr/local/lib/hermes-agent && \
     /tools/bin/uv pip install \
     requests httpx aiohttp beautifulsoup4 lxml \
