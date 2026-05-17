@@ -15,7 +15,7 @@ RUN mkdir -p /tools/bin && \
     mkdir -p /tools/uv/{python,tools,cache} && \
     chmod -R 777 /tools
 
-# cn only (新增了 N_NODE_MIRROR 解决 n 24 下载超时问题)
+# cn only
 ENV UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
 ENV NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
 ENV PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"
@@ -34,9 +34,8 @@ RUN apt update -y && \
     apt clean && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# 设置 unsafe-perm 允许 root 身份执行 npm lifecycle scripts (防止 playwright 等包报错)
+# 直接配置镜像并安装 Node 24
 RUN npm config set registry https://registry.npmmirror.com && \
-    npm config set unsafe-perm true && \
     npm install -g n && \
     n 24
 
@@ -49,8 +48,9 @@ RUN cd /usr/local/lib && \
 
 RUN git config --global url."https://ghfast.top/https://github.com".insteadOf "https://github.com"
 
-# 直接进入仓库目录，运行自带的 scripts/install.sh，完全避开 proxy 下载导致的 HTML 语法报错
+# 临时取消 Playwright 镜像，使用 GitHub 的海外网络直接秒下官方包
 RUN cd /usr/local/lib/hermes-agent && \
+    export PLAYWRIGHT_DOWNLOAD_HOST="" && \
     bash scripts/install.sh && \
     /tools/bin/uv run python -m playwright install chromium || true && \
     rm -rf /root/.cache /root/.npm
