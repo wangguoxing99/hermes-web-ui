@@ -47,6 +47,9 @@ RUN curl -fsSL https://ghproxy.net/https://raw.githubusercontent.com/NousResearc
     rm -rf /root && \
     mkdir /root
 
+RUN chown -R hermes:hermes /tools && \
+    chmod -R 755 /tools/bin
+
 RUN echo '#!/bin/bash' > /entrypoint.sh && \
     echo 'hermes-web-ui start $UI_PORT && sleep infinity' >> /entrypoint.sh && \
     chmod +x /entrypoint.sh
