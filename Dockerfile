@@ -5,7 +5,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
 # ===== 用户级目录配置 =====
-# 所有工具和项目都装在 hermes 家目录下，用户级权限
 ENV HERMES_HOME="/home/hermes"
 ENV NPM_CONFIG_PREFIX="${HERMES_HOME}/.npm-global"
 ENV NPM_CONFIG_CACHE="${HERMES_HOME}/.npm-cache"
@@ -20,18 +19,11 @@ ENV GATEWAY_ALLOW_ALL_USERS=true
 ENV WEIXIN_GROUP_POLICY=open
 ENV HERMES_YOLO_MODE=1
 
-# cn mirrors (npm registry 保留国内镜像，加速 npm install)
+# cn mirrors
 ENV NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
 ENV PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"
-# 如果需要其他国内镜像，取消下面注释
-# ENV UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
-# ENV N_NODE_MIRROR="https://npmmirror.com/mirrors/node"
 
-# ===== Step 1: 系统依赖（root 必要） =====
-# 如果需要阿里云 apt 镜像，取消下面注释
-# RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources && \
-#     sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
-
+# ===== Step 1: 系统依赖 =====
 RUN apt update -y && \
     apt dist-upgrade -y && \
     apt install -y \
@@ -43,7 +35,7 @@ RUN apt update -y && \
     && apt clean && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# ===== Step 2: 创建 hermes 用户 + 用户级目录结构 =====
+# ===== Step 2: 创建 hermes 用户 + 用户级目录 =====
 RUN useradd -m -s /bin/bash hermes && \
     mkdir -p ${HERMES_HOME}/.npm-global \
              ${HERMES_HOME}/.npm-cache \
@@ -56,7 +48,7 @@ RUN useradd -m -s /bin/bash hermes && \
 RUN echo "hermes ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/hermes && \
     chmod 0440 /etc/sudoers.d/hermes
 
-# ===== Step 3: 以 hermes 用户安装 Node 24（直接下载二进制包，不用 n 管理器） =====
+# ===== Step 3: Node 24（直接下载二进制包） =====
 USER hermes
 WORKDIR ${HERMES_HOME}
 
@@ -64,7 +56,6 @@ RUN npm config set prefix "${NPM_CONFIG_PREFIX}" && \
     npm config set cache "${NPM_CONFIG_CACHE}" && \
     npm config set registry "https://registry.npmmirror.com"
 
-# 直接下载 Node 24 二进制包（比用 n 管理器更快更稳）
 RUN curl -fsSL https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz | \
     tar -xJ -C ${HERMES_HOME} --strip-components=1 && \
     mkdir -p ${NPM_CONFIG_PREFIX}/bin ${NPM_CONFIG_PREFIX}/lib && \
@@ -74,48 +65,59 @@ RUN curl -fsSL https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz |
     mv ${HERMES_HOME}/lib/node_modules ${NPM_CONFIG_PREFIX}/lib/ && \
     rm -rf ${HERMES_HOME}/bin ${HERMES_HOME}/lib ${HERMES_HOME}/include ${HERMES_HOME}/share
 
-# 刷新 PATH
 ENV PATH="${NPM_CONFIG_PREFIX}/bin:${PATH}"
 
-# ===== Step 4: 以 hermes 用户安装 uv（用户级） =====
+# ===== Step 4: uv =====
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="${UV_INSTALL_DIR}" sh
-
-# 验证
 RUN node --version && npm --version && ${UV_INSTALL_DIR}/uv --version
 
-# ===== Step 5: 克隆 hermes-agent 到用户目录 =====
+# ===== Step 5: hermes-agent =====
 RUN git config --global url."https://ghfast.top/https://github.com".insteadOf "https://github.com" && \
     git clone --depth 1 https://ghfast.top/https://github.com/NousResearch/hermes-agent.git ${HERMES_AGENT_DIR} || \
     git clone --depth 1 https://gitclone.com/github.com/NousResearch/hermes-agent.git ${HERMES_AGENT_DIR} || \
     git clone --depth 1 https://ghproxy.net/https://github.com/NousResearch/hermes-agent.git ${HERMES_AGENT_DIR}
 
-# ===== Step 6: 安装 hermes-agent（用户级 uv） =====
+# ===== Step 6: 安装 hermes-agent =====
 WORKDIR ${HERMES_AGENT_DIR}
-
 RUN export PLAYWRIGHT_DOWNLOAD_HOST="" && \
     bash scripts/install.sh && \
     ${UV_INSTALL_DIR}/uv run python -m playwright install chromium || true
 
-# ===== Step 7: 用户级 pip 安装常用包 =====
+# ===== Step 7: pip 包 =====
 RUN ${UV_INSTALL_DIR}/uv pip install \
     requests httpx aiohttp beautifulsoup4 lxml \
     numpy pandas pillow opencv-python-headless \
     pyyaml python-dotenv pydantic pdfplumber PyMuPDF huggingface_hub
 
-# ===== Step 8: 安装 hermes-web-ui（用户级 npm -g） =====
+# ===== Step 8: hermes-web-ui =====
 RUN npm install -g hermes-web-ui axios cheerio dotenv
-
-# 验证
 RUN ls -la ${NPM_CONFIG_PREFIX}/bin/hermes-web-ui* && \
     ls -la ${NODE_PATH}/hermes-web-ui/
 
-# ===== Step 9: 清理用户级缓存 =====
+# ===== Step 9: 清理 =====
 RUN rm -rf ${NPM_CONFIG_CACHE}/* ${UV_CACHE_DIR}/* ${HERMES_HOME}/.cache
 
-# ===== Step 10: 入口脚本（内联） =====
+# ===== Step 10: 预装内容打包 + 入口脚本 =====
 USER root
+# 打包预装好的 /home/hermes 内容，entrypoint 里解压到 volume
+RUN tar -czf /hermes-seed.tar.gz -C /home/hermes \
+    --exclude='.npm-cache' \
+    --exclude='.uv/cache' \
+    --exclude='.cache' \
+    .
+
 RUN cat > /entrypoint.sh << 'SCRIPT'
 #!/bin/bash
+
+# 如果 volume 为空，从种子包恢复预装内容
+if [ ! -f /home/hermes/.hermes-seed-extracted ]; then
+    echo "📦 首次启动，恢复预装内容..."
+    tar -xzf /hermes-seed.tar.gz -C /home/hermes/
+    chown -R hermes:hermes /home/hermes
+    touch /home/hermes/.hermes-seed-extracted
+    echo "✅ 恢复完成"
+fi
+
 sudo chown -R hermes:hermes /home/hermes
 
 BACKUP_NAME="hermes_full_backup.tar.gz"
@@ -198,4 +200,3 @@ VOLUME ${HERMES_HOME}
 EXPOSE 8648
 
 CMD ["/entrypoint.sh"]
-
