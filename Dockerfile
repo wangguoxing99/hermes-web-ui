@@ -45,7 +45,7 @@ RUN useradd -m -s /bin/bash hermes && \
              ${HERMES_HOME}/.uv/cache && \
     chown -R hermes:hermes ${HERMES_HOME}
 
-RUN echo "hermes ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/hermes && \
+RUN echo "hermes ALL=(ALL) NOPASSWD: ***" > /etc/sudoers.d/hermes && \
     chmod 0440 /etc/sudoers.d/hermes
 
 # ===== Step 3: Node 24（直接下载二进制包） =====
@@ -97,9 +97,8 @@ RUN ls -la ${NPM_CONFIG_PREFIX}/bin/hermes-web-ui* && \
 # ===== Step 9: 清理 =====
 RUN rm -rf ${NPM_CONFIG_CACHE}/* ${UV_CACHE_DIR}/* ${HERMES_HOME}/.cache
 
-# ===== Step 10: 预装内容打包 + 入口脚本 =====
+# ===== Step 10: 打包种子 + 入口脚本 =====
 USER root
-# 打包预装好的 /home/hermes 内容，entrypoint 里解压到 volume
 RUN tar -czf /hermes-seed.tar.gz -C /home/hermes \
     --exclude='.npm-cache' \
     --exclude='.uv/cache' \
@@ -109,7 +108,7 @@ RUN tar -czf /hermes-seed.tar.gz -C /home/hermes \
 RUN cat > /entrypoint.sh << 'SCRIPT'
 #!/bin/bash
 
-# 如果 volume 为空，从种子包恢复预装内容
+# 首次启动：如果 volume 为空，从种子包恢复所有预装内容
 if [ ! -f /home/hermes/.hermes-seed-extracted ]; then
     echo "📦 首次启动，恢复预装内容..."
     tar -xzf /hermes-seed.tar.gz -C /home/hermes/
