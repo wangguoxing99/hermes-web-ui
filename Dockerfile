@@ -1,201 +1,181 @@
-FROM ubuntu:24.04
+FROM python:3.11-slim
 
-ENV UI_PORT=8648
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Asia/Shanghai
-
-# ===== 用户级目录配置 =====
-ENV HERMES_HOME="/home/hermes"
+# 设置环境变量
+ENV HERMES_HOME=/hermes
+ENV PATH="${HERMES_HOME}/.local/bin:${HERMES_HOME}/.npm-global/bin:${PATH}"
 ENV NPM_CONFIG_PREFIX="${HERMES_HOME}/.npm-global"
-ENV NPM_CONFIG_CACHE="${HERMES_HOME}/.npm-cache"
-ENV NODE_PATH="${NPM_CONFIG_PREFIX}/lib/node_modules"
-ENV UV_INSTALL_DIR="${HERMES_HOME}/.local/bin"
-ENV UV_PYTHON_INSTALL_DIR="${HERMES_HOME}/.uv/python"
-ENV UV_CACHE_DIR="${HERMES_HOME}/.uv/cache"
-ENV UV_TOOL_DIR="${HERMES_HOME}/.uv/tools"
-ENV HERMES_AGENT_DIR="${HERMES_HOME}/hermes-agent"
-ENV PATH="${HERMES_AGENT_DIR}/.venv/bin:${UV_INSTALL_DIR}:${NPM_CONFIG_PREFIX}/bin:${PATH}"
-ENV GATEWAY_ALLOW_ALL_USERS=true
-ENV WEIXIN_GROUP_POLICY=open
-ENV HERMES_YOLO_MODE=1
+ENV PIP_USER=1
+ENV PYTHONUSERBASE="${HERMES_HOME}/.local"
+# Camoufox 相关环境变量
+ENV CAMOUFOX_PORT=9377
+ENV CAMOUFOX_BINARY_PATH="${HERMES_HOME}/.local/bin/camoufox"
+ENV CAMOUFOX_CONFIG_PATH="${HERMES_HOME}/.cache/camoufox/config.yaml"
+ENV BROWSER_TYPE="camoufox"
 
-# cn mirrors
-ENV NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
-ENV PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"
+# 安装系统依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # 基础工具
+    curl \
+    wget \
+    git \
+    ca-certificates \
+    gnupg \
+    # 编译依赖
+    build-essential \
+    gcc \
+    g++ \
+    make \
+    # Python 依赖
+    python3-dev \
+    libffi-dev \
+    libssl-dev \
+    # 多媒体处理
+    ffmpeg \
+    ripgrep \
+    # 图片处理（扫码、二维码）
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    libwebp-dev \
+    # Camoufox 浏览器系统依赖 [citation:5][citation:8]
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0t64 \
+    libatk-bridge2.0-0t64 \
+    libcups2t64 \
+    libdrm2 \
+    libdbus-1-3 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2t64 \
+    libatspi2.0-0t64 \
+    libwayland-client0 \
+    libgtk-3-0 \
+    libdbus-glib-1-2 \
+    libxss1 \
+    # 终端和字体支持
+    xterm \
+    fonts-noto-color-emoji \
+    fonts-wqy-microhei \
+    fonts-dejavu-core \
+    fontconfig \
+    # 其他工具
+    procps \
+    htop \
+    vim \
+    less \
+    && rm -rf /var/lib/apt/lists/*
 
-# ===== Step 1: 系统依赖 =====
-RUN apt update -y && \
-    apt dist-upgrade -y && \
-    apt install -y \
-        curl ca-certificates git sudo vim screen \
-        npm build-essential python3-dev python-is-python3 libffi-dev \
-        libgtk-3-0 libglib2.0-0 libx11-6 libxrender1 libxext6 libdbus-1-3 \
-        libgl1 ffmpeg ripgrep poppler-utils tesseract-ocr tesseract-ocr-chi-sim \
-        unzip zip jq wget lsof htop iotop iftop \
-    && apt clean && \
-    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+# 安装 Node.js 24.x
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
 
-# ===== Step 2: 创建 hermes 用户 + 用户级目录 =====
-RUN useradd -m -s /bin/bash hermes && \
-    mkdir -p ${HERMES_HOME}/.npm-global \
-             ${HERMES_HOME}/.npm-cache \
-             ${HERMES_HOME}/.local/bin \
-             ${HERMES_HOME}/.uv/python \
-             ${HERMES_HOME}/.uv/tools \
-             ${HERMES_HOME}/.uv/cache && \
-    chown -R hermes:hermes ${HERMES_HOME}
+# 验证版本
+RUN node --version && npm --version
 
-RUN echo "hermes ALL=(ALL) NOPASSWD: ***" > /etc/sudoers.d/hermes && \
-    chmod 0440 /etc/sudoers.d/hermes
+# 创建 hermes 用户和目录
+RUN useradd -m -d ${HERMES_HOME} -s /bin/bash hermes \
+    && mkdir -p ${HERMES_HOME}/projects \
+    && mkdir -p ${HERMES_HOME}/.local/bin \
+    && mkdir -p ${HERMES_HOME}/.npm-global \
+    && mkdir -p ${HERMES_HOME}/.cache/camoufox \
+    && mkdir -p ${HERMES_HOME}/.hermes \
+    && mkdir -p ${HERMES_HOME}/.hermes-web-ui \
+    && chown -R hermes:hermes ${HERMES_HOME}
 
-# ===== Step 3: Node 24（直接下载二进制包） =====
+# 切换到 hermes 用户
 USER hermes
 WORKDIR ${HERMES_HOME}
 
-RUN npm config set prefix "${NPM_CONFIG_PREFIX}" && \
-    npm config set cache "${NPM_CONFIG_CACHE}" && \
-    npm config set registry "https://registry.npmmirror.com"
+# 安装 uv（Python 包管理）
+RUN pip install --user uv
 
-RUN curl -fsSL https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz | \
-    tar -xJ -C ${HERMES_HOME} --strip-components=1 && \
-    mkdir -p ${NPM_CONFIG_PREFIX}/bin ${NPM_CONFIG_PREFIX}/lib && \
-    mv ${HERMES_HOME}/bin/node ${NPM_CONFIG_PREFIX}/bin/ && \
-    mv ${HERMES_HOME}/bin/npm ${NPM_CONFIG_PREFIX}/bin/ && \
-    mv ${HERMES_HOME}/bin/npx ${NPM_CONFIG_PREFIX}/bin/ && \
-    mv ${HERMES_HOME}/lib/node_modules ${NPM_CONFIG_PREFIX}/lib/ && \
-    rm -rf ${HERMES_HOME}/bin ${HERMES_HOME}/lib ${HERMES_HOME}/include ${HERMES_HOME}/share
+# 更新 npm
+RUN npm install -g npm@latest
 
-ENV PATH="${NPM_CONFIG_PREFIX}/bin:${PATH}"
+# 克隆并安装 hermes-agent
+RUN git clone https://github.com/NousResearch/hermes-agent.git ${HERMES_HOME}/projects/hermes-agent \
+    && cd ${HERMES_HOME}/projects/hermes-agent \
+    && uv pip install --user -e ".[all]"
 
-# ===== Step 4: uv =====
-RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="${UV_INSTALL_DIR}" sh
-RUN node --version && npm --version && ${UV_INSTALL_DIR}/uv --version
+# 安装 Camoufox Python 包 [citation:3]
+RUN pip install --user camoufox[geoip]
 
-# ===== Step 5: hermes-agent =====
-RUN git config --global url."https://ghfast.top/https://github.com".insteadOf "https://github.com" && \
-    git clone --depth 1 https://ghfast.top/https://github.com/NousResearch/hermes-agent.git ${HERMES_AGENT_DIR} || \
-    git clone --depth 1 https://gitclone.com/github.com/NousResearch/hermes-agent.git ${HERMES_AGENT_DIR} || \
-    git clone --depth 1 https://ghproxy.net/https://github.com/NousResearch/hermes-agent.git ${HERMES_AGENT_DIR}
+# 下载 Camoufox 浏览器 [citation:3]
+RUN python -m camoufox fetch
 
-# ===== Step 6: 安装 hermes-agent =====
-WORKDIR ${HERMES_AGENT_DIR}
-RUN export PLAYWRIGHT_DOWNLOAD_HOST="" && \
-    bash scripts/install.sh && \
-    ${UV_INSTALL_DIR}/uv run python -m playwright install chromium || true
+# 安装 Camoufox CLI（可选，提供更便捷的浏览器管理）[citation:5]
+RUN npm install -g camoufox-cli \
+    && camoufox-cli install --with-deps 2>/dev/null || true
 
-# ===== Step 7: pip 包 =====
-RUN ${UV_INSTALL_DIR}/uv pip install \
-    requests httpx aiohttp beautifulsoup4 lxml \
-    numpy pandas pillow opencv-python-headless \
-    pyyaml python-dotenv pydantic pdfplumber PyMuPDF huggingface_hub
+# 全局安装 hermes-web-ui
+RUN npm install -g hermes-web-ui
 
-# ===== Step 8: hermes-web-ui =====
-RUN npm install -g hermes-web-ui axios cheerio dotenv
-RUN ls -la ${NPM_CONFIG_PREFIX}/bin/hermes-web-ui* && \
-    ls -la ${NODE_PATH}/hermes-web-ui/
+# 创建软链接
+RUN ln -s ${HERMES_HOME}/projects/hermes-agent/hermes ${HERMES_HOME}/.local/bin/hermes-agent \
+    && ln -s ${HERMES_HOME}/.npm-global/bin/hermes-web-ui ${HERMES_HOME}/.local/bin/hermes-web-ui
 
-# ===== Step 9: 清理 =====
-RUN rm -rf ${NPM_CONFIG_CACHE}/* ${UV_CACHE_DIR}/* ${HERMES_HOME}/.cache
+# ============================================================
+# 内置启动脚本
+# ============================================================
+RUN printf '%s\n' \
+    '#!/bin/bash' \
+    'set -e' \
+    '' \
+    'echo "=== Hermes Full Stack Container ==="' \
+    'echo "Node.js version: $(node --version)"' \
+    'echo "npm version: $(npm --version)"' \
+    'echo "Python version: $(python --version)"' \
+    'echo "Camoufox browser: $(camoufox --version 2>/dev/null || echo 'installed')"' \
+    '' \
+    '# 初始化必要目录' \
+    'mkdir -p /hermes/.hermes' \
+    'mkdir -p /hermes/.hermes-web-ui' \
+    'mkdir -p /hermes/.cache/camoufox' \
+    '' \
+    '# 检查 Camoufox 浏览器是否已下载' \
+    'if [ ! -f "${CAMOUFOX_BINARY_PATH}" ] && [ ! -f "/hermes/.local/bin/camoufox" ]; then' \
+    '    echo "Camoufox browser not found, downloading..."' \
+    '    python -m camoufox fetch 2>/dev/null || \' \
+    '    camoufox-cli install 2>/dev/null || \' \
+    '    echo "Warning: Camoufox auto-install failed, please run manually"' \
+    'else' \
+    '    echo "Camoufox browser found at ${CAMOUFOX_BINARY_PATH}"' \
+    'fi' \
+    '' \
+    '# 如果首次启动，自动配置 Camoufox' \
+    'if [ ! -f "/hermes/.hermes/config.yaml" ]; then' \
+    '    echo "First startup — initializing Hermes Agent..."' \
+    '    hermes-agent setup --non-interactive || true' \
+    '    echo "Configuring Camoufox as default browser..."' \
+    '    hermes-agent tools browser install camofox 2>/dev/null || true' \
+    'fi' \
+    '' \
+    'echo "Starting Hermes Web UI on port ${PORT:-8648}..."' \
+    'echo "Dashboard URL: http://localhost:${PORT:-8648}"' \
+    'echo "Camoufox port: ${CAMOUFOX_PORT}"' \
+    '' \
+    'exec hermes-web-ui start --port ${PORT:-8648}' \
+    > ${HERMES_HOME}/start.sh \
+    && chmod +x ${HERMES_HOME}/start.sh
 
-# ===== Step 10: 打包种子 + 入口脚本 =====
-USER root
-RUN tar -czf /hermes-seed.tar.gz -C /home/hermes \
-    --exclude='.npm-cache' \
-    --exclude='.uv/cache' \
-    --exclude='.cache' \
-    .
-
-RUN cat > /entrypoint.sh << 'SCRIPT'
-#!/bin/bash
-
-# 首次启动：如果 volume 为空，从种子包恢复所有预装内容
-if [ ! -f /home/hermes/.hermes-seed-extracted ]; then
-    echo "📦 首次启动，恢复预装内容..."
-    tar -xzf /hermes-seed.tar.gz -C /home/hermes/
-    chown -R hermes:hermes /home/hermes
-    touch /home/hermes/.hermes-seed-extracted
-    echo "✅ 恢复完成"
-fi
-
-sudo chown -R hermes:hermes /home/hermes
-
-BACKUP_NAME="hermes_full_backup.tar.gz"
-REPO_ID="$HF_DATASET_ID"
-LOG_FILE="/home/hermes/.hermes-web-ui/server.log"
-BACKUP_INTERVAL_MINUTES=${BACKUP_INTERVAL:-10}
-BACKUP_INTERVAL_SECONDS=$((BACKUP_INTERVAL_MINUTES * 60))
-export NODE_NO_WARNINGS=1
-
-# --- Huggingface 恢复 ---
-if [ -n "$REPO_ID" ]; then
-    echo "🔄 正在从 Dataset 恢复数据: $REPO_ID..."
-    python3 << END_PY
-from huggingface_hub import hf_hub_download
-import os
-try:
-    hf_hub_download(repo_id='$REPO_ID', filename='$BACKUP_NAME', repo_type='dataset', local_dir='.')
-    print('✅ 下载备份成功。')
-except Exception as e:
-    print(f'⚠️ 未发现初始备份或下载失败: {e}')
-END_PY
-    if [ -f "$BACKUP_NAME" ]; then
-        echo "📦 正在执行全量数据恢复..."
-        tar -xzf "$BACKUP_NAME" -C /home/hermes/
-        rm "$BACKUP_NAME"
-        echo "✅ 恢复完成。"
-    fi
-fi
-
-# --- 定时备份 ---
-if [ -n "$REPO_ID" ] && [ -n "$HF_TOKEN" ]; then
-    (
-      while true; do
-        sleep $BACKUP_INTERVAL_SECONDS
-        echo "⏳ --- 定时全量备份 (间隔: ${BACKUP_INTERVAL_MINUTES} 分钟) ---"
-        tar -czf "/tmp/$BACKUP_NAME" -C /home/hermes \
-            --exclude='agent-venv' \
-            --exclude='.cache' \
-            --exclude='.npm-cache' \
-            --exclude='.uv/cache' \
-            .
-        python3 << END_PY
-from huggingface_hub import HfApi
-import os
-api = HfApi()
-try:
-    api.upload_file(
-        path_or_fileobj='/tmp/$BACKUP_NAME',
-        path_in_repo='$BACKUP_NAME',
-        repo_id='$REPO_ID',
-        repo_type='dataset',
-        token=os.environ.get('HF_TOKEN')
-    )
-    print('✅ 全量备份同步完成。')
-except Exception as e:
-    print(f'❌ 同步失败: {e}')
-END_PY
-      done
-    ) &
-fi
-
-# --- 启动 ---
-echo "🚀 正在启动 Hermes Web UI..."
-mkdir -p /home/hermes/.hermes-web-ui
-touch "$LOG_FILE"
-
-if [ -n "$WEBUI_TOKEN" ]; then
-    export AUTH_TOKEN="$WEBUI_TOKEN"
-fi
-
-hermes-web-ui start $UI_PORT &
-
-tail -f "$LOG_FILE"
-SCRIPT
-RUN chmod +x /entrypoint.sh
-USER hermes
-
-WORKDIR ${HERMES_HOME}
-VOLUME ${HERMES_HOME}
+# 暴露端口
 EXPOSE 8648
+# 可选：暴露 Camoufox 调试端口 [citation:1]
+EXPOSE 9377
 
-CMD ["/entrypoint.sh"]
+# 持久化数据卷
+VOLUME ["/hermes/.hermes", "/hermes/.hermes-web-ui", "/hermes/.cache"]
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+    CMD curl -f http://localhost:8648/health || exit 1
+
+ENTRYPOINT ["/bin/bash", "/hermes/start.sh"]
