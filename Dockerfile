@@ -1,106 +1,123 @@
 FROM ubuntu:24.04
+
 ENV UI_PORT=8648
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
-ENV UV_INSTALL_DIR="/tools/bin"
-ENV UV_PYTHON_INSTALL_DIR="/tools/uv/python"
-ENV UV_CACHE_DIR="/tools/uv/cache"
-ENV UV_TOOL_DIR="/tools/uv/tools"
-ENV PATH="/usr/local/lib/hermes-agent/.venv/bin:$UV_INSTALL_DIR:$PATH"
-ENV HERMES_AGENT_DIR="/usr/local/lib/hermes-agent"
+
+# ===== 用户级目录配置 =====
+# 所有工具和项目都装在 hermes 家目录下，用户级权限
+ENV HERMES_HOME="/home/hermes"
+ENV NPM_CONFIG_PREFIX="${HERMES_HOME}/.npm-global"
+ENV NPM_CONFIG_CACHE="${HERMES_HOME}/.npm-cache"
+ENV NODE_PATH="${NPM_CONFIG_PREFIX}/lib/node_modules"
+ENV UV_INSTALL_DIR="${HERMES_HOME}/.local/bin"
+ENV UV_PYTHON_INSTALL_DIR="${HERMES_HOME}/.uv/python"
+ENV UV_CACHE_DIR="${HERMES_HOME}/.uv/cache"
+ENV UV_TOOL_DIR="${HERMES_HOME}/.uv/tools"
+ENV HERMES_AGENT_DIR="${HERMES_HOME}/hermes-agent"
+ENV PATH="${HERMES_AGENT_DIR}/.venv/bin:${UV_INSTALL_DIR}:${NPM_CONFIG_PREFIX}/bin:${PATH}"
 ENV GATEWAY_ALLOW_ALL_USERS=true
 ENV WEIXIN_GROUP_POLICY=open
 ENV HERMES_YOLO_MODE=1
 
-RUN mkdir -p /tools/bin && \
-    mkdir -p /tools/uv/{python,tools,cache} && \
-    chmod -R 777 /tools
-
-# cn only
+# cn mirrors
 ENV UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
 ENV NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
 ENV PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"
 ENV N_NODE_MIRROR="https://npmmirror.com/mirrors/node"
 
+# ===== Step 1: 系统依赖（root 必要） =====
 RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources && \
     sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
 
 RUN apt update -y && \
     apt dist-upgrade -y && \
-    apt install -y vim screen htop iotop iftop curl ca-certificates lsof npm \
-    git ripgrep ffmpeg build-essential python3-dev python-is-python3 libffi-dev sudo \
-    libgtk-3-0 libglib2.0-0 libx11-6 libxrender1 libxext6 libdbus-1-3 \
-    unzip zip jq wget poppler-utils tesseract-ocr tesseract-ocr-chi-sim libgl1 && \
-    apt clean && \
+    apt install -y \
+        curl ca-certificates git sudo vim screen \
+        npm build-essential python3-dev python-is-python3 libffi-dev \
+        libgtk-3-0 libglib2.0-0 libx11-6 libxrender1 libxext6 libdbus-1-3 \
+        libgl1 ffmpeg ripgrep poppler-utils tesseract-ocr tesseract-ocr-chi-sim \
+        unzip zip jq wget lsof htop iotop iftop \
+    && apt clean && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN npm config set registry https://registry.npmmirror.com && \
-    npm install -g n && \
-    n 24
+# ===== Step 2: 创建 hermes 用户 + 用户级目录结构 =====
+RUN useradd -m -s /bin/bash hermes && \
+    mkdir -p ${HERMES_HOME}/.npm-global \
+             ${HERMES_HOME}/.npm-cache \
+             ${HERMES_HOME}/.local/bin \
+             ${HERMES_HOME}/.uv/python \
+             ${HERMES_HOME}/.uv/tools \
+             ${HERMES_HOME}/.uv/cache && \
+    chown -R hermes:hermes ${HERMES_HOME}
 
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+RUN echo "hermes ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/hermes && \
+    chmod 0440 /etc/sudoers.d/hermes
 
-RUN cd /usr/local/lib && \
-    git clone --depth 1 https://ghfast.top/https://github.com/NousResearch/hermes-agent.git || \
-    git clone --depth 1 https://gitclone.com/github.com/NousResearch/hermes-agent.git || \
-    git clone --depth 1 https://ghproxy.net/https://github.com/NousResearch/hermes-agent.git
+# ===== Step 3: 以 hermes 用户安装 npm 用户级工具 + Node 24 =====
+USER hermes
+WORKDIR ${HERMES_HOME}
 
-RUN git config --global url."https://ghfast.top/https://github.com".insteadOf "https://github.com"
+RUN npm config set prefix "${NPM_CONFIG_PREFIX}" && \
+    npm config set cache "${NPM_CONFIG_CACHE}" && \
+    npm config set registry "https://registry.npmmirror.com"
 
-RUN cd /usr/local/lib/hermes-agent && \
-    export PLAYWRIGHT_DOWNLOAD_HOST="" && \
+# 安装 n（Node 版本管理器），再用 n 安装 Node 24（全用户级）
+RUN npm install -g n && \
+    N_NODE_MIRROR="https://npmmirror.com/mirrors/node" n 24
+
+# 刷新 PATH
+ENV PATH="${NPM_CONFIG_PREFIX}/bin:${PATH}"
+
+# ===== Step 4: 以 hermes 用户安装 uv（用户级） =====
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="${UV_INSTALL_DIR}" sh
+
+# 验证
+RUN node --version && npm --version && ${UV_INSTALL_DIR}/uv --version
+
+# ===== Step 5: 克隆 hermes-agent 到用户目录 =====
+RUN git config --global url."https://ghfast.top/https://github.com".insteadOf "https://github.com" && \
+    git clone --depth 1 https://ghfast.top/https://github.com/NousResearch/hermes-agent.git ${HERMES_AGENT_DIR} || \
+    git clone --depth 1 https://gitclone.com/github.com/NousResearch/hermes-agent.git ${HERMES_AGENT_DIR} || \
+    git clone --depth 1 https://ghproxy.net/https://github.com/NousResearch/hermes-agent.git ${HERMES_AGENT_DIR}
+
+# ===== Step 6: 安装 hermes-agent（用户级 uv） =====
+WORKDIR ${HERMES_AGENT_DIR}
+
+RUN export PLAYWRIGHT_DOWNLOAD_HOST="" && \
     bash scripts/install.sh && \
-    /tools/bin/uv run python -m playwright install chromium || true && \
-    rm -rf /root/.cache /root/.npm
+    ${UV_INSTALL_DIR}/uv run python -m playwright install chromium || true
 
-RUN cd /usr/local/lib/hermes-agent && \
-    /tools/bin/uv pip install \
+# ===== Step 7: 用户级 pip 安装常用包 =====
+RUN ${UV_INSTALL_DIR}/uv pip install \
     requests httpx aiohttp beautifulsoup4 lxml \
     numpy pandas pillow opencv-python-headless \
     pyyaml python-dotenv pydantic pdfplumber PyMuPDF huggingface_hub
 
-RUN npm root -g && npm install -g hermes-web-ui axios cheerio dotenv
+# ===== Step 8: 安装 hermes-web-ui（用户级 npm -g） =====
+RUN npm install -g hermes-web-ui axios cheerio dotenv
 
-# 将整个 venv 移动到 /opt 备用
-RUN mv /usr/local/lib/hermes-agent/.venv /opt/venv-backup
+# 验证
+RUN ls -la ${NPM_CONFIG_PREFIX}/bin/hermes-web-ui* && \
+    ls -la ${NODE_PATH}/hermes-web-ui/
 
-RUN useradd -m -s /bin/bash hermes && chown -R hermes:hermes /home/hermes && chmod 700 /home/hermes && \
-    echo "hermes ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/hermes && \
-    chmod 0440 /etc/sudoers.d/hermes && \
-    usermod -aG systemd-timesync hermes
+# ===== Step 9: 清理用户级缓存 =====
+RUN rm -rf ${NPM_CONFIG_CACHE}/* ${UV_CACHE_DIR}/* ${HERMES_HOME}/.cache
 
-RUN chown -R hermes:hermes /tools && \
-    chown -R hermes:hermes /usr/local/lib/hermes-agent && \
-    chown -R hermes:hermes /usr/local/lib/node_modules/hermes-web-ui && \
-    chown -R hermes:hermes /opt/venv-backup
-
-# 【修改点】：重写入口脚本，加入备份时间变量支持
-RUN cat <<'EOF' > /entrypoint.sh
+# ===== Step 10: 入口脚本（内联） =====
+USER root
+RUN cat > /entrypoint.sh << 'SCRIPT'
 #!/bin/bash
-
-# --- 1. 修复挂载目录与虚拟环境 ---
 sudo chown -R hermes:hermes /home/hermes
 
-if [ ! -d "/home/hermes/agent-venv" ]; then
-    echo "📦 正在初始化持久化 Python 虚拟环境..."
-    cp -a /opt/venv-backup /home/hermes/agent-venv
-fi
-sudo rm -rf /usr/local/lib/hermes-agent/.venv
-sudo ln -s /home/hermes/agent-venv /usr/local/lib/hermes-agent/.venv
-sudo chown -h hermes:hermes /usr/local/lib/hermes-agent/.venv
-
-# --- 2. 变量配置 ---
 BACKUP_NAME="hermes_full_backup.tar.gz"
 REPO_ID="$HF_DATASET_ID"
 LOG_FILE="/home/hermes/.hermes-web-ui/server.log"
-
-# 读取自定义备份时间（分钟），如果未设置则默认 10 分钟
 BACKUP_INTERVAL_MINUTES=${BACKUP_INTERVAL:-10}
 BACKUP_INTERVAL_SECONDS=$((BACKUP_INTERVAL_MINUTES * 60))
-
 export NODE_NO_WARNINGS=1
 
-# --- 3. 启动时：全量恢复 ---
+# --- Huggingface 恢复 ---
 if [ -n "$REPO_ID" ]; then
     echo "🔄 正在从 Dataset 恢复数据: $REPO_ID..."
     python3 << END_PY
@@ -120,19 +137,18 @@ END_PY
     fi
 fi
 
-# --- 4. 运行中：定时执行备份 ---
+# --- 定时备份 ---
 if [ -n "$REPO_ID" ] && [ -n "$HF_TOKEN" ]; then
     (
       while true; do
         sleep $BACKUP_INTERVAL_SECONDS
-        echo "⏳ --- 正在执行定时全量备份 (间隔: ${BACKUP_INTERVAL_MINUTES} 分钟) ---"
-        # 排除掉虚拟环境等无需备份的大文件，减小包体积
+        echo "⏳ --- 定时全量备份 (间隔: ${BACKUP_INTERVAL_MINUTES} 分钟) ---"
         tar -czf "/tmp/$BACKUP_NAME" -C /home/hermes \
             --exclude='agent-venv' \
             --exclude='.cache' \
-            --exclude='.npm' \
+            --exclude='.npm-cache' \
+            --exclude='.uv/cache' \
             .
-        
         python3 << END_PY
 from huggingface_hub import HfApi
 import os
@@ -153,29 +169,24 @@ END_PY
     ) &
 fi
 
-# --- 5. 启动服务 ---
+# --- 启动 ---
 echo "🚀 正在启动 Hermes Web UI..."
 mkdir -p /home/hermes/.hermes-web-ui
 touch "$LOG_FILE"
 
-# 兼容原本脚本中的 WEBUI_TOKEN 变量
 if [ -n "$WEBUI_TOKEN" ]; then
     export AUTH_TOKEN="$WEBUI_TOKEN"
 fi
 
 hermes-web-ui start $UI_PORT &
 
-# --- 6. 容器保活 ---
 tail -f "$LOG_FILE"
-EOF
-
-# 兼容 Windows 换行符导致的报错
-RUN sed -i 's/\r$//' /entrypoint.sh && \
-    chmod +x /entrypoint.sh
-
-WORKDIR /home/hermes
-VOLUME /home/hermes
+SCRIPT
+RUN chmod +x /entrypoint.sh
 USER hermes
+
+WORKDIR ${HERMES_HOME}
+VOLUME ${HERMES_HOME}
 EXPOSE 8648
 
 CMD ["/entrypoint.sh"]
