@@ -103,7 +103,7 @@ RUN useradd -m -d ${HERMES_HOME} -s /bin/bash hermes \
 USER hermes
 WORKDIR ${HERMES_HOME}
 
-# 先安装 uv（后面装 Camoufox 时可能还会用到）
+# 先安装 uv
 RUN pip install --user uv
 
 # 克隆 hermes-agent 项目
@@ -111,10 +111,10 @@ RUN git clone https://github.com/NousResearch/hermes-agent.git ${HERMES_HOME}/pr
 
 WORKDIR ${HERMES_HOME}/projects/hermes-agent
 
-# 用传统 pip 先装核心依赖
+# 用 pip 安装核心依赖
 RUN pip install --user -e .
 
-# 再用 pip 装 [all]，分步容错
+# 安装 [all] 可选依赖，带容错
 RUN pip install --user -e ".[all]" || \
     (echo "=== [all] install failed, trying key subsets ===" && \
      pip install --user -e ".[browser]" && \
@@ -140,27 +140,15 @@ RUN npm install -g npm@latest \
     && npm install -g hermes-web-ui
 
 # ============================================================
-# 创建软链接（先确保目标文件存在）
+# 所有安装完成后，创建软链接
 # ============================================================
-# 找到 hermes 脚本的实际路径（可能是项目根目录的 hermes 或 pip 安装后的 hermes 命令）
-RUN if [ -f "${HERMES_HOME}/projects/hermes-agent/hermes" ]; then \
-        ln -s ${HERMES_HOME}/projects/hermes-agent/hermes ${HERMES_HOME}/.local/bin/hermes-agent; \
-    elif which hermes > /dev/null 2>&1; then \
-        ln -s $(which hermes) ${HERMES_HOME}/.local/bin/hermes-agent; \
-    else \
-        echo "Warning: hermes command not found, skipping symlink"; \
-    fi
+# hermes-agent: pip install -e . 会注册 hermes 命令到 ~/.local/bin
+RUN ln -sf ${HERMES_HOME}/.local/bin/hermes ${HERMES_HOME}/.local/bin/hermes-agent
 
-# 找到 hermes-web-ui 的实际路径
-RUN if [ -f "${HERMES_HOME}/.npm-global/bin/hermes-web-ui" ]; then \
-        ln -s ${HERMES_HOME}/.npm-global/bin/hermes-web-ui ${HERMES_HOME}/.local/bin/hermes-web-ui; \
-    elif which hermes-web-ui > /dev/null 2>&1; then \
-        ln -s $(which hermes-web-ui) ${HERMES_HOME}/.local/bin/hermes-web-ui; \
-    else \
-        echo "Warning: hermes-web-ui command not found, skipping symlink"; \
-    fi
+# hermes-web-ui: npm install -g 会把命令装到 ~/.npm-global/bin
+RUN ln -sf ${HERMES_HOME}/.npm-global/bin/hermes-web-ui ${HERMES_HOME}/.local/bin/hermes-web-ui
 
-# 验证软链接
+# 验证
 RUN ls -la ${HERMES_HOME}/.local/bin/
 
 # 内置启动脚本
@@ -178,17 +166,15 @@ RUN printf '%s\n' \
     'mkdir -p /hermes/.hermes-web-ui' \
     'mkdir -p /hermes/.cache/camoufox' \
     '' \
-    '# 检查 Camoufox 浏览器是否已下载' \
-    'if [ ! -f "${CAMOUFOX_BINARY_PATH}" ] && [ ! -f "/hermes/.local/bin/camoufox" ]; then' \
+    '# 检查 Camoufox 浏览器' \
+    'if [ ! -f "/hermes/.local/bin/camoufox" ]; then' \
     '    echo "Camoufox browser not found, downloading..."' \
     '    python -m camoufox fetch 2>/dev/null || \' \
     '    camoufox-cli install 2>/dev/null || \' \
-    '    echo "Warning: Camoufox auto-install failed, please run manually"' \
-    'else' \
-    '    echo "Camoufox browser found at ${CAMOUFOX_BINARY_PATH}"' \
+    '    echo "Warning: Camoufox auto-install failed"' \
     'fi' \
     '' \
-    '# 如果首次启动，自动配置 Hermes Agent' \
+    '# 首次启动初始化' \
     'if [ ! -f "/hermes/.hermes/config.yaml" ]; then' \
     '    echo "First startup — initializing Hermes Agent..."' \
     '    hermes-agent setup --non-interactive || true' \
