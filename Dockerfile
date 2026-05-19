@@ -6,11 +6,13 @@ ENV PATH="${HERMES_HOME}/.local/bin:${HERMES_HOME}/.npm-global/bin:${PATH}"
 ENV NPM_CONFIG_PREFIX="${HERMES_HOME}/.npm-global"
 ENV PIP_USER=1
 ENV PYTHONUSERBASE="${HERMES_HOME}/.local"
-# Camoufox 相关环境变量
+# Camoufox 相关环境变量（浏览器按需安装，此处仅预设路径）
 ENV CAMOUFOX_PORT=9377
 ENV CAMOUFOX_BINARY_PATH="${HERMES_HOME}/.local/bin/camoufox"
 ENV CAMOUFOX_CONFIG_PATH="${HERMES_HOME}/.cache/camoufox/config.yaml"
 ENV BROWSER_TYPE="camoufox"
+# 时区设置（默认上海，可通过 -e TZ=xxx 覆盖）
+ENV TZ=Asia/Shanghai
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -45,7 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libwebp-dev \
     # 文件类型检测
     libmagic-dev \
-    # Camoufox 浏览器系统依赖
+    # 浏览器系统依赖（供 Camoufox/Playwright 运行时使用）
     libnss3 \
     libnspr4 \
     libatk1.0-0t64 \
@@ -73,6 +75,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-wqy-microhei \
     fonts-dejavu-core \
     fontconfig \
+    # 时区数据
+    tzdata \
     # 其他工具
     procps \
     htop \
@@ -81,13 +85,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
+# 配置时区
+RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime \
+    && echo "${TZ}" > /etc/timezone
+
 # 安装 Node.js 24.x
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
-
-# 验证版本
-RUN node --version && npm --version
 
 # 创建 hermes 用户和目录
 RUN useradd -m -d ${HERMES_HOME} -s /bin/bash hermes \
@@ -103,7 +108,7 @@ RUN useradd -m -d ${HERMES_HOME} -s /bin/bash hermes \
 USER hermes
 WORKDIR ${HERMES_HOME}
 
-# 先安装 uv
+# 安装 uv
 RUN pip install --user uv
 
 # 克隆 hermes-agent 项目
@@ -111,7 +116,7 @@ RUN git clone https://github.com/NousResearch/hermes-agent.git ${HERMES_HOME}/pr
 
 WORKDIR ${HERMES_HOME}/projects/hermes-agent
 
-# 用 pip 安装核心依赖
+# 安装核心依赖
 RUN pip install --user -e .
 
 # 安装 [all] 可选依赖，带容错
@@ -125,38 +130,33 @@ RUN pip install --user -e ".[all]" || \
 
 WORKDIR ${HERMES_HOME}
 
-# 装 Camoufox Python 包
+# 安装 Camoufox Python 包（仅接口库，不含浏览器二进制文件）
 RUN pip install --user camoufox[geoip]
 
-# 下载 Camoufox 浏览器
-RUN python -m camoufox fetch
-
-# 装 Camoufox CLI
-RUN npm install -g camoufox-cli \
-    && camoufox-cli install --with-deps 2>/dev/null || true
-
-# 更新 npm 并装 hermes-web-ui
+# 更新 npm 并全局安装 hermes-web-ui
 RUN npm install -g npm@latest \
     && npm install -g hermes-web-ui
 
+# 创建软链接
+RUN ln -sf ${HERMES_HOME}/.local/bin/hermes ${HERMES_HOME}/.local/bin/hermes-agent \
+    && ln -sf ${HERMES_HOME}/.npm-global/bin/hermes-web-ui ${HERMES_HOME}/.local/bin/hermes-web-ui
+
 # ============================================================
-# 所有安装完成后，创建软链接
-# ============================================================
-# hermes-agent: pip install -e . 会注册 hermes 命令到 ~/.local/bin
-RUN ln -sf ${HERMES_HOME}/.local/bin/hermes ${HERMES_HOME}/.local/bin/hermes-agent
-
-# hermes-web-ui: npm install -g 会把命令装到 ~/.npm-global/bin
-RUN ln -sf ${HERMES_HOME}/.npm-global/bin/hermes-web-ui ${HERMES_HOME}/.local/bin/hermes-web-ui
-
-# 验证
-RUN ls -la ${HERMES_HOME}/.local/bin/
-
 # 内置启动脚本
+# ============================================================
 RUN printf '%s\n' \
     '#!/bin/bash' \
     'set -e' \
     '' \
+    '# 根据环境变量动态设置时区' \
+    'if [ -n "${TZ}" ]; then' \
+    '    echo "Setting timezone to ${TZ}..."' \
+    '    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime' \
+    '    echo "${TZ}" > /etc/timezone' \
+    'fi' \
+    '' \
     'echo "=== Hermes Full Stack Container ==="' \
+    'echo "Timezone: $(cat /etc/timezone) ($(date +%Z))"' \
     'echo "Node.js version: $(node --version)"' \
     'echo "npm version: $(npm --version)"' \
     'echo "Python version: $(python --version)"' \
@@ -166,12 +166,14 @@ RUN printf '%s\n' \
     'mkdir -p /hermes/.hermes-web-ui' \
     'mkdir -p /hermes/.cache/camoufox' \
     '' \
-    '# 检查 Camoufox 浏览器' \
+    '# 检查 Camoufox 浏览器是否已安装' \
     'if [ ! -f "/hermes/.local/bin/camoufox" ]; then' \
-    '    echo "Camoufox browser not found, downloading..."' \
-    '    python -m camoufox fetch 2>/dev/null || \' \
-    '    camoufox-cli install 2>/dev/null || \' \
-    '    echo "Warning: Camoufox auto-install failed"' \
+    '    echo "=========================================="' \
+    '    echo " Camoufox browser not found."' \
+    '    echo " Install manually in container:"' \
+    '    echo "   python -m camoufox fetch"' \
+    '    echo "   or: camoufox-cli install"' \
+    '    echo "=========================================="' \
     'fi' \
     '' \
     '# 首次启动初始化' \
@@ -192,7 +194,7 @@ EXPOSE 9377
 
 VOLUME ["/hermes/.hermes", "/hermes/.hermes-web-ui", "/hermes/.cache"]
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8648/health || exit 1
 
 ENTRYPOINT ["/bin/bash", "/hermes/start.sh"]
