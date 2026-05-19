@@ -111,7 +111,7 @@ RUN git clone https://github.com/NousResearch/hermes-agent.git ${HERMES_HOME}/pr
 
 WORKDIR ${HERMES_HOME}/projects/hermes-agent
 
-# 用传统 pip 先装核心依赖（pyproject.toml 里不包含可选的那部分）
+# 用传统 pip 先装核心依赖
 RUN pip install --user -e .
 
 # 再用 pip 装 [all]，分步容错
@@ -139,9 +139,29 @@ RUN npm install -g camoufox-cli \
 RUN npm install -g npm@latest \
     && npm install -g hermes-web-ui
 
-# 软链接
-RUN ln -s ${HERMES_HOME}/projects/hermes-agent/hermes ${HERMES_HOME}/.local/bin/hermes-agent \
-    && ln -s ${HERMES_HOME}/.npm-global/bin/hermes-web-ui ${HERMES_HOME}/.local/bin/hermes-web-ui
+# ============================================================
+# 创建软链接（先确保目标文件存在）
+# ============================================================
+# 找到 hermes 脚本的实际路径（可能是项目根目录的 hermes 或 pip 安装后的 hermes 命令）
+RUN if [ -f "${HERMES_HOME}/projects/hermes-agent/hermes" ]; then \
+        ln -s ${HERMES_HOME}/projects/hermes-agent/hermes ${HERMES_HOME}/.local/bin/hermes-agent; \
+    elif which hermes > /dev/null 2>&1; then \
+        ln -s $(which hermes) ${HERMES_HOME}/.local/bin/hermes-agent; \
+    else \
+        echo "Warning: hermes command not found, skipping symlink"; \
+    fi
+
+# 找到 hermes-web-ui 的实际路径
+RUN if [ -f "${HERMES_HOME}/.npm-global/bin/hermes-web-ui" ]; then \
+        ln -s ${HERMES_HOME}/.npm-global/bin/hermes-web-ui ${HERMES_HOME}/.local/bin/hermes-web-ui; \
+    elif which hermes-web-ui > /dev/null 2>&1; then \
+        ln -s $(which hermes-web-ui) ${HERMES_HOME}/.local/bin/hermes-web-ui; \
+    else \
+        echo "Warning: hermes-web-ui command not found, skipping symlink"; \
+    fi
+
+# 验证软链接
+RUN ls -la ${HERMES_HOME}/.local/bin/
 
 # 内置启动脚本
 RUN printf '%s\n' \
