@@ -20,11 +20,11 @@ ENV GATEWAY_ALLOW_ALL_USERS=true
 ENV WEIXIN_GROUP_POLICY=open
 ENV HERMES_YOLO_MODE=1
 
-# cn mirrors
-# 如果需要国内镜像，取消下面注释
+# cn mirrors (npm registry 保留国内镜像，加速 npm install)
+ENV NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
+ENV PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"
+# 如果需要其他国内镜像，取消下面注释
 # ENV UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
-# ENV NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
-# ENV PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"
 # ENV N_NODE_MIRROR="https://npmmirror.com/mirrors/node"
 
 # ===== Step 1: 系统依赖（root 必要） =====
@@ -56,7 +56,7 @@ RUN useradd -m -s /bin/bash hermes && \
 RUN echo "hermes ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/hermes && \
     chmod 0440 /etc/sudoers.d/hermes
 
-# ===== Step 3: 以 hermes 用户安装 npm 用户级工具 + Node 24 =====
+# ===== Step 3: 以 hermes 用户安装 Node 24（直接下载二进制包，不用 n 管理器） =====
 USER hermes
 WORKDIR ${HERMES_HOME}
 
@@ -64,10 +64,15 @@ RUN npm config set prefix "${NPM_CONFIG_PREFIX}" && \
     npm config set cache "${NPM_CONFIG_CACHE}" && \
     npm config set registry "https://registry.npmmirror.com"
 
-# 安装 n（Node 版本管理器），再用 n 安装 Node 24（全用户级）
-RUN npm install -g n && \
-    n 24 && \
-    hash -r
+# 直接下载 Node 24 二进制包（比用 n 管理器更快更稳）
+RUN curl -fsSL https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz | \
+    tar -xJ -C ${HERMES_HOME} --strip-components=1 && \
+    mkdir -p ${NPM_CONFIG_PREFIX}/bin ${NPM_CONFIG_PREFIX}/lib && \
+    mv ${HERMES_HOME}/bin/node ${NPM_CONFIG_PREFIX}/bin/ && \
+    mv ${HERMES_HOME}/bin/npm ${NPM_CONFIG_PREFIX}/bin/ && \
+    mv ${HERMES_HOME}/bin/npx ${NPM_CONFIG_PREFIX}/bin/ && \
+    mv ${HERMES_HOME}/lib/node_modules ${NPM_CONFIG_PREFIX}/lib/ && \
+    rm -rf ${HERMES_HOME}/bin ${HERMES_HOME}/lib ${HERMES_HOME}/include ${HERMES_HOME}/share
 
 # 刷新 PATH
 ENV PATH="${NPM_CONFIG_PREFIX}/bin:${PATH}"
@@ -193,3 +198,4 @@ VOLUME ${HERMES_HOME}
 EXPOSE 8648
 
 CMD ["/entrypoint.sh"]
+
