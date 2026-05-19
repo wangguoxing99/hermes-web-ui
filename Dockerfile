@@ -21,14 +21,16 @@ ENV WEIXIN_GROUP_POLICY=open
 ENV HERMES_YOLO_MODE=1
 
 # cn mirrors
-ENV UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
-ENV NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
-ENV PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"
-ENV N_NODE_MIRROR="https://npmmirror.com/mirrors/node"
+# 如果需要国内镜像，取消下面注释
+# ENV UV_INDEX_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+# ENV NPM_CONFIG_REGISTRY="https://registry.npmmirror.com"
+# ENV PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"
+# ENV N_NODE_MIRROR="https://npmmirror.com/mirrors/node"
 
 # ===== Step 1: 系统依赖（root 必要） =====
-RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources && \
-    sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
+# 如果需要阿里云 apt 镜像，取消下面注释
+# RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources && \
+#     sed -i 's|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list.d/ubuntu.sources
 
 RUN apt update -y && \
     apt dist-upgrade -y && \
@@ -64,7 +66,8 @@ RUN npm config set prefix "${NPM_CONFIG_PREFIX}" && \
 
 # 安装 n（Node 版本管理器），再用 n 安装 Node 24（全用户级）
 RUN npm install -g n && \
-    N_NODE_MIRROR="https://npmmirror.com/mirrors/node" n 24
+    n 24 && \
+    hash -r
 
 # 刷新 PATH
 ENV PATH="${NPM_CONFIG_PREFIX}/bin:${PATH}"
