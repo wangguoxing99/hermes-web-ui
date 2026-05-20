@@ -16,73 +16,22 @@ ENV TZ=Asia/Shanghai
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # 基础工具
-    curl \
-    wget \
-    git \
-    ca-certificates \
-    gnupg \
-    # 编译依赖
-    build-essential \
-    gcc \
-    g++ \
-    make \
-    cmake \
-    pkg-config \
-    # Python 依赖
-    python3-dev \
-    libffi-dev \
-    libssl-dev \
-    # 多媒体处理
-    ffmpeg \
-    ripgrep \
-    # 音频处理依赖（语音功能需要）
-    portaudio19-dev \
-    libsndfile1-dev \
-    libpulse-dev \
-    # 图片处理（扫码、二维码）
-    libjpeg-dev \
-    libpng-dev \
-    libtiff-dev \
-    libwebp-dev \
-    # 文件类型检测
+    curl wget git ca-certificates gnupg \
+    build-essential gcc g++ make cmake pkg-config \
+    python3-dev libffi-dev libssl-dev \
+    ffmpeg ripgrep \
+    portaudio19-dev libsndfile1-dev libpulse-dev \
+    libjpeg-dev libpng-dev libtiff-dev libwebp-dev \
     libmagic-dev \
-    # 浏览器系统依赖（供 Camoufox/Playwright 运行时使用）
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0t64 \
-    libatk-bridge2.0-0t64 \
-    libcups2t64 \
-    libdrm2 \
-    libdbus-1-3 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libpango-1.0-0 \
-    libcairo2 \
-    libasound2t64 \
-    libatspi2.0-0t64 \
-    libwayland-client0 \
-    libgtk-3-0 \
-    libdbus-glib-1-2 \
-    libxss1 \
-    # 终端和字体支持
-    xterm \
-    fonts-noto-color-emoji \
-    fonts-wqy-microhei \
-    fonts-dejavu-core \
-    fontconfig \
-    # 时区数据
-    tzdata \
-    # 其他工具
-    procps \
-    htop \
-    vim \
-    less \
-    netcat-openbsd \
+    libnss3 libnspr4 libatk1.0-0t64 libatk-bridge2.0-0t64 \
+    libcups2t64 libdrm2 libdbus-1-3 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
+    libgbm1 libpango-1.0-0 libcairo2 libasound2t64 \
+    libatspi2.0-0t64 libwayland-client0 libgtk-3-0 \
+    libdbus-glib-1-2 libxss1 \
+    xterm fonts-noto-color-emoji fonts-wqy-microhei \
+    fonts-dejavu-core fontconfig \
+    tzdata procps htop vim less netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # 配置时区
@@ -142,56 +91,60 @@ RUN ln -sf ${HERMES_HOME}/.local/bin/hermes ${HERMES_HOME}/.local/bin/hermes-age
     && ln -sf ${HERMES_HOME}/.npm-global/bin/hermes-web-ui ${HERMES_HOME}/.local/bin/hermes-web-ui
 
 # ============================================================
-# 内置启动脚本（使用 heredoc，避免引号转义问题）
+# 内置启动脚本（逐行 echo，最可靠的方式）
 # ============================================================
-RUN cat > /hermes/start.sh << 'SCRIPT_EOF'
-#!/bin/bash
-set -e
+RUN echo '#!/bin/bash' > /hermes/start.sh && \
+    echo 'set -e' >> /hermes/start.sh && \
+    echo '' >> /hermes/start.sh && \
+    echo '# 根据环境变量动态设置时区' >> /hermes/start.sh && \
+    echo 'if [ -n "${TZ}" ]; then' >> /hermes/start.sh && \
+    echo '    echo "Setting timezone to ${TZ}..."' >> /hermes/start.sh && \
+    echo '    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime' >> /hermes/start.sh && \
+    echo '    echo "${TZ}" > /etc/timezone' >> /hermes/start.sh && \
+    echo 'fi' >> /hermes/start.sh && \
+    echo '' >> /hermes/start.sh && \
+    echo 'echo "=== Hermes Full Stack Container ==="' >> /hermes/start.sh && \
+    echo 'echo "Timezone: $(cat /etc/timezone) ($(date +%Z))"' >> /hermes/start.sh && \
+    echo 'echo "Node.js version: $(node --version)"' >> /hermes/start.sh && \
+    echo 'echo "npm version: $(npm --version)"' >> /hermes/start.sh && \
+    echo 'echo "Python version: $(python --version)"' >> /hermes/start.sh && \
+    echo '' >> /hermes/start.sh && \
+    echo '# 初始化必要目录' >> /hermes/start.sh && \
+    echo 'mkdir -p /hermes/.hermes' >> /hermes/start.sh && \
+    echo 'mkdir -p /hermes/.hermes-web-ui' >> /hermes/start.sh && \
+    echo 'mkdir -p /hermes/.cache/camoufox' >> /hermes/start.sh && \
+    echo '' >> /hermes/start.sh && \
+    echo '# 检查 Camoufox 浏览器是否已安装' >> /hermes/start.sh && \
+    echo 'if [ ! -f "/hermes/.local/bin/camoufox" ]; then' >> /hermes/start.sh && \
+    echo '    echo "=========================================="' >> /hermes/start.sh && \
+    echo '    echo " Camoufox browser not found."' >> /hermes/start.sh && \
+    echo '    echo " Install manually in container:"' >> /hermes/start.sh && \
+    echo '    echo "   python -m camoufox fetch"' >> /hermes/start.sh && \
+    echo '    echo "   or: camoufox-cli install"' >> /hermes/start.sh && \
+    echo '    echo "=========================================="' >> /hermes/start.sh && \
+    echo 'fi' >> /hermes/start.sh && \
+    echo '' >> /hermes/start.sh && \
+    echo '# 首次启动初始化' >> /hermes/start.sh && \
+    echo 'if [ ! -f "/hermes/.hermes/config.yaml" ]; then' >> /hermes/start.sh && \
+    echo '    echo "First startup — initializing Hermes Agent..."' >> /hermes/start.sh && \
+    echo '    hermes-agent setup --non-interactive || true' >> /hermes/start.sh && \
+    echo 'fi' >> /hermes/start.sh && \
+    echo '' >> /hermes/start.sh && \
+    echo 'echo "Starting Hermes Web UI on port ${PORT:-8648}..."' >> /hermes/start.sh && \
+    echo 'echo "Dashboard URL: http://localhost:${PORT:-8648}"' >> /hermes/start.sh && \
+    echo '' >> /hermes/start.sh && \
+    echo 'exec hermes-web-ui start --port ${PORT:-8648}' >> /hermes/start.sh
 
-# 根据环境变量动态设置时区
-if [ -n "${TZ}" ]; then
-    echo "Setting timezone to ${TZ}..."
-    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
-    echo "${TZ}" > /etc/timezone
-fi
-
-echo "=== Hermes Full Stack Container ==="
-echo "Timezone: $(cat /etc/timezone) ($(date +%Z))"
-echo "Node.js version: $(node --version)"
-echo "npm version: $(npm --version)"
-echo "Python version: $(python --version)"
-
-# 初始化必要目录
-mkdir -p /hermes/.hermes
-mkdir -p /hermes/.hermes-web-ui
-mkdir -p /hermes/.cache/camoufox
-
-# 检查 Camoufox 浏览器是否已安装
-if [ ! -f "/hermes/.local/bin/camoufox" ]; then
-    echo "=========================================="
-    echo " Camoufox browser not found."
-    echo " Install manually in container:"
-    echo "   python -m camoufox fetch"
-    echo "   or: camoufox-cli install"
-    echo "=========================================="
-fi
-
-# 首次启动初始化
-if [ ! -f "/hermes/.hermes/config.yaml" ]; then
-    echo "First startup — initializing Hermes Agent..."
-    hermes-agent setup --non-interactive || true
-fi
-
-echo "Starting Hermes Web UI on port ${PORT:-8648}..."
-echo "Dashboard URL: http://localhost:${PORT:-8648}"
-
-exec hermes-web-ui start --port ${PORT:-8648}
-SCRIPT_EOF
-
+# 给脚本加执行权限
 RUN chmod +x /hermes/start.sh
 
-# 验证脚本存在
-RUN ls -la /hermes/start.sh && head -5 /hermes/start.sh
+# 验证脚本确实生成了
+RUN echo "=== Verifying start.sh ===" && \
+    ls -la /hermes/start.sh && \
+    echo "=== Script content (first 5 lines) ===" && \
+    head -5 /hermes/start.sh && \
+    echo "=== Script content (last 5 lines) ===" && \
+    tail -5 /hermes/start.sh
 
 EXPOSE 8648
 EXPOSE 9377
