@@ -142,52 +142,56 @@ RUN ln -sf ${HERMES_HOME}/.local/bin/hermes ${HERMES_HOME}/.local/bin/hermes-age
     && ln -sf ${HERMES_HOME}/.npm-global/bin/hermes-web-ui ${HERMES_HOME}/.local/bin/hermes-web-ui
 
 # ============================================================
-# 内置启动脚本
+# 内置启动脚本（使用 heredoc，避免引号转义问题）
 # ============================================================
-RUN printf '%s\n' \
-    '#!/bin/bash' \
-    'set -e' \
-    '' \
-    '# 根据环境变量动态设置时区' \
-    'if [ -n "${TZ}" ]; then' \
-    '    echo "Setting timezone to ${TZ}..."' \
-    '    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime' \
-    '    echo "${TZ}" > /etc/timezone' \
-    'fi' \
-    '' \
-    'echo "=== Hermes Full Stack Container ==="' \
-    'echo "Timezone: $(cat /etc/timezone) ($(date +%Z))"' \
-    'echo "Node.js version: $(node --version)"' \
-    'echo "npm version: $(npm --version)"' \
-    'echo "Python version: $(python --version)"' \
-    '' \
-    '# 初始化必要目录' \
-    'mkdir -p /hermes/.hermes' \
-    'mkdir -p /hermes/.hermes-web-ui' \
-    'mkdir -p /hermes/.cache/camoufox' \
-    '' \
-    '# 检查 Camoufox 浏览器是否已安装' \
-    'if [ ! -f "/hermes/.local/bin/camoufox" ]; then' \
-    '    echo "=========================================="' \
-    '    echo " Camoufox browser not found."' \
-    '    echo " Install manually in container:"' \
-    '    echo "   python -m camoufox fetch"' \
-    '    echo "   or: camoufox-cli install"' \
-    '    echo "=========================================="' \
-    'fi' \
-    '' \
-    '# 首次启动初始化' \
-    'if [ ! -f "/hermes/.hermes/config.yaml" ]; then' \
-    '    echo "First startup — initializing Hermes Agent..."' \
-    '    hermes-agent setup --non-interactive || true' \
-    'fi' \
-    '' \
-    'echo "Starting Hermes Web UI on port ${PORT:-8648}..."' \
-    'echo "Dashboard URL: http://localhost:${PORT:-8648}"' \
-    '' \
-    'exec hermes-web-ui start --port ${PORT:-8648}' \
-    > ${HERMES_HOME}/start.sh \
-    && chmod +x ${HERMES_HOME}/start.sh
+RUN cat > /hermes/start.sh << 'SCRIPT_EOF'
+#!/bin/bash
+set -e
+
+# 根据环境变量动态设置时区
+if [ -n "${TZ}" ]; then
+    echo "Setting timezone to ${TZ}..."
+    ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime
+    echo "${TZ}" > /etc/timezone
+fi
+
+echo "=== Hermes Full Stack Container ==="
+echo "Timezone: $(cat /etc/timezone) ($(date +%Z))"
+echo "Node.js version: $(node --version)"
+echo "npm version: $(npm --version)"
+echo "Python version: $(python --version)"
+
+# 初始化必要目录
+mkdir -p /hermes/.hermes
+mkdir -p /hermes/.hermes-web-ui
+mkdir -p /hermes/.cache/camoufox
+
+# 检查 Camoufox 浏览器是否已安装
+if [ ! -f "/hermes/.local/bin/camoufox" ]; then
+    echo "=========================================="
+    echo " Camoufox browser not found."
+    echo " Install manually in container:"
+    echo "   python -m camoufox fetch"
+    echo "   or: camoufox-cli install"
+    echo "=========================================="
+fi
+
+# 首次启动初始化
+if [ ! -f "/hermes/.hermes/config.yaml" ]; then
+    echo "First startup — initializing Hermes Agent..."
+    hermes-agent setup --non-interactive || true
+fi
+
+echo "Starting Hermes Web UI on port ${PORT:-8648}..."
+echo "Dashboard URL: http://localhost:${PORT:-8648}"
+
+exec hermes-web-ui start --port ${PORT:-8648}
+SCRIPT_EOF
+
+RUN chmod +x /hermes/start.sh
+
+# 验证脚本存在
+RUN ls -la /hermes/start.sh && head -5 /hermes/start.sh
 
 EXPOSE 8648
 EXPOSE 9377
