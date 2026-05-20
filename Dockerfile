@@ -6,11 +6,9 @@ ENV NPM_CONFIG_PREFIX="${HERMES_HOME}/.npm-global"
 ENV PIP_USER=1
 ENV PYTHONUSERBASE="${HERMES_HOME}/.local"
 ENV CAMOUFOX_PORT=9377
-ENV CAMOUFOX_BINARY_PATH="${HERMES_HOME}/.local/bin/camoufox"
-ENV CAMOUFOX_CONFIG_PATH="${HERMES_HOME}/.cache/camoufox/config.yaml"
-ENV BROWSER_TYPE="camoufox"
 ENV TZ=Asia/Shanghai
 
+# 系统依赖（同前）
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl wget git ca-certificates gnupg \
     build-essential gcc g++ make cmake pkg-config \
@@ -30,13 +28,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata procps htop vim less netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
-RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime \
-    && echo "${TZ}" > /etc/timezone
+# 时区
+RUN ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime && echo "${TZ}" > /etc/timezone
 
+# Node.js 24
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# 创建 hermes 用户和目录
 RUN useradd -m -d ${HERMES_HOME} -s /bin/bash hermes \
     && mkdir -p ${HERMES_HOME}/projects \
     && mkdir -p ${HERMES_HOME}/.local/bin \
@@ -49,9 +49,9 @@ RUN useradd -m -d ${HERMES_HOME} -s /bin/bash hermes \
 USER hermes
 WORKDIR ${HERMES_HOME}
 
+# 安装 uv、克隆并安装 hermes-agent
 RUN pip install --user uv
 RUN git clone https://github.com/NousResearch/hermes-agent.git ${HERMES_HOME}/projects/hermes-agent
-
 WORKDIR ${HERMES_HOME}/projects/hermes-agent
 RUN pip install --user -e .
 RUN pip install --user -e ".[all]" || \
@@ -64,15 +64,26 @@ RUN pip install --user -e ".[all]" || \
 
 WORKDIR ${HERMES_HOME}
 RUN pip install --user camoufox[geoip]
+
+# 全局安装 hermes-web-ui 和 npm 最新版
 RUN npm install -g npm@latest hermes-web-ui
+
+# 创建软链接
 RUN ln -sf ${HERMES_HOME}/.local/bin/hermes ${HERMES_HOME}/.local/bin/hermes-agent \
     && ln -sf ${HERMES_HOME}/.npm-global/bin/hermes-web-ui ${HERMES_HOME}/.local/bin/hermes-web-ui
 
-# 内置启动脚本，时区更改失败仅警告
-RUN cat > /hermes/start.sh << 'EOF'
+# 切回 root 进行打包和放置启动脚本
+USER root
+
+# 打包 /hermes 下所有内容（排除启动后生成的数据目录，仅保留初始文件）
+RUN tar czf /hermes.tar.gz -C / hermes
+
+# 内置启动脚本（位于 /usr/local/bin/start.sh，不会被挂载卷覆盖）
+RUN cat > /usr/local/bin/start.sh << 'SCRIPT_EOF'
 #!/bin/bash
 set -e
 
+# 动态时区（失败不退出）
 if [ -n "${TZ}" ]; then
     echo "Setting timezone to ${TZ}..."
     ln -sf /usr/share/zoneinfo/${TZ} /etc/localtime 2>/dev/null || \
@@ -81,39 +92,58 @@ if [ -n "${TZ}" ]; then
 fi
 
 echo "=== Hermes Full Stack Container ==="
-echo "Timezone: $(cat /etc/timezone 2>/dev/null || echo 'unknown') ($(date +%Z 2>/dev/null || echo 'unknown'))"
+echo "Timezone: $(cat /etc/timezone 2>/dev/null || echo 'unknown')"
 echo "Node.js version: $(node --version)"
 echo "npm version: $(npm --version)"
-echo "Python version: $(python --version)"
 
+# 检查 /hermes 是否为空（不存在 .local 目录或文件数极少）
+if [ ! -d "/hermes/.local" ] || [ -z "$(ls -A /hermes/.local 2>/dev/null)" ]; then
+    echo ">>> Initializing /hermes from built-in archive..."
+    tar xzf /hermes.tar.gz -C /
+    chown -R hermes:hermes /hermes
+    echo ">>> Extraction complete."
+fi
+
+# 确保目录存在
 mkdir -p /hermes/.hermes /hermes/.hermes-web-ui /hermes/.cache/camoufox
 
+# 修复 PATH（确保命令可用）
+export PATH="/hermes/.local/bin:/hermes/.npm-global/bin:${PATH}"
+
+# 确定 hermes 命令
+if [ -x "/hermes/projects/hermes-agent/hermes" ]; then
+    HERMES_CMD="/hermes/projects/hermes-agent/hermes"
+else
+    HERMES_CMD="hermes"
+fi
+
+# 首次设置 Hermes Agent
+if [ ! -f "/hermes/.hermes/config.yaml" ]; then
+    echo "First startup — initializing Hermes Agent..."
+    $HERMES_CMD setup --non-interactive || true
+fi
+
+# 提示 Camoufox 浏览器安装
 if [ ! -f "/hermes/.local/bin/camoufox" ]; then
     echo "=========================================="
     echo " Camoufox browser not found."
     echo " Install manually in container:"
     echo "   python -m camoufox fetch"
-    echo "   or: camoufox-cli install"
     echo "=========================================="
-fi
-
-if [ ! -f "/hermes/.hermes/config.yaml" ]; then
-    echo "First startup — initializing Hermes Agent..."
-    hermes-agent setup --non-interactive || true
 fi
 
 echo "Starting Hermes Web UI on port ${PORT:-8648}..."
 echo "Dashboard URL: http://localhost:${PORT:-8648}"
 
 exec hermes-web-ui start --port ${PORT:-8648}
-EOF
+SCRIPT_EOF
 
-RUN chmod +x /hermes/start.sh
+RUN chmod +x /usr/local/bin/start.sh
 
 EXPOSE 8648 9377
-VOLUME ["/hermes/.hermes", "/hermes/.hermes-web-ui", "/hermes/.cache"]
+VOLUME ["/hermes"]
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8648/health || exit 1
 
-ENTRYPOINT ["/hermes/start.sh"]
+ENTRYPOINT ["/usr/local/bin/start.sh"]
